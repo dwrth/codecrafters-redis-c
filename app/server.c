@@ -54,8 +54,12 @@ int main() {
       accept(server_fd, (struct sockaddr *)&client_addr, &client_addr_len);
   printf("Client connected\n");
 
-  while (1) {
-    send(client_fd, "+PONG\r\n", strlen("+PONG\r\n"), 0);
+  while (client_fd != -1) {
+    char buffer[1024];
+    read(client_fd, buffer, sizeof(buffer));
+    if (strncmp(buffer, "*1\r\n$4\r\nPING\r\n", 13) == 0) {
+      send(client_fd, "+PONG\r\n", strlen("+PONG\r\n"), 0);
+    }
   }
 
   close(server_fd);

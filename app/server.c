@@ -72,9 +72,7 @@ int main() {
       }
 
       char buffer[BUFFER_SIZE];
-      while (read(client_fds[i], buffer, sizeof(buffer))) {
-        send(client_fds[i], "+PONG\r\n", strlen("+PONG\r\n"), 0);
-      }
+      send(client_fds[i], "+PONG\r\n", strlen("+PONG\r\n"), 0);
     }
   }
 

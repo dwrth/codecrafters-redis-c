@@ -7,6 +7,8 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#define BUFFER_SIZE 1024
+
 int main() {
   // Disable output buffering
   setbuf(stdout, NULL);
@@ -54,14 +56,13 @@ int main() {
       accept(server_fd, (struct sockaddr *)&client_addr, &client_addr_len);
   printf("Client connected\n");
 
-  while (client_fd != -1) {
-    char buffer[1024];
-    read(client_fd, buffer, sizeof(buffer));
-    if (strncmp(buffer, "*1\r\n$4\r\nPING\r\n", 13) == 0) {
-      send(client_fd, "+PONG\r\n", strlen("+PONG\r\n"), 0);
-    }
+  char buffer[BUFFER_SIZE];
+
+  while (read(client_fd, buffer, sizeof(buffer))) {
+    send(client_fd, "+PONG\r\n", strlen("+PONG\r\n"), 0);
   }
 
+  close(client_fd);
   close(server_fd);
 
   return 0;

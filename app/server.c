@@ -9,6 +9,14 @@
 
 #define BUFFER_SIZE 1024
 
+int accept_client(int server_fd, struct sockaddr_in *client_addr,
+                  int *client_addr_len) {
+  int client_fd =
+      accept(server_fd, (struct sockaddr *)client_addr, client_addr_len);
+  printf("Client connected\n");
+  return client_fd;
+}
+
 int main() {
   // Disable output buffering
   setbuf(stdout, NULL);
@@ -52,14 +60,15 @@ int main() {
   printf("Waiting for a client to connect...\n");
   client_addr_len = sizeof(client_addr);
 
-  int client_fd =
-      accept(server_fd, (struct sockaddr *)&client_addr, &client_addr_len);
-  printf("Client connected\n");
+  int client_fd;
 
-  char buffer[BUFFER_SIZE];
+  while ((client_fd =
+              accept_client(server_fd, &client_addr, &client_addr_len)) != -1) {
+    char buffer[BUFFER_SIZE];
 
-  while (read(client_fd, buffer, sizeof(buffer))) {
-    send(client_fd, "+PONG\r\n", strlen("+PONG\r\n"), 0);
+    while (read(client_fd, buffer, sizeof(buffer))) {
+      send(client_fd, "+PONG\r\n", strlen("+PONG\r\n"), 0);
+    }
   }
 
   close(client_fd);

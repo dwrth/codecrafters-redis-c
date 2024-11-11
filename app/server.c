@@ -9,17 +9,79 @@
 
 #define BUFFER_SIZE 1024
 
+// Add helper functions for RESP parsing
+char *read_until_crlf(char *buffer, int *pos, int len) {
+  static char result[BUFFER_SIZE];
+  int i = 0;
+
+  while (*pos < len && i < BUFFER_SIZE - 1) {
+    if (buffer[*pos] == '\r' && buffer[*pos + 1] == '\n') {
+      result[i] = '\0';
+      *pos += 2;
+      return result;
+    }
+    result[i++] = buffer[(*pos)++];
+  }
+  return NULL;
+}
+
 void handle_client(int client_fd) {
-  char buffer[1024];
+  char buffer[BUFFER_SIZE];
 
   while (1) {
     int bytes_read = read(client_fd, buffer, sizeof(buffer));
-
-    if (bytes_read <= 0) {
+    if (bytes_read <= 0)
       break;
-    }
 
-    send(client_fd, "+PONG\r\n", 7, 0);
+    int pos = 0;
+    while (pos < bytes_read) {
+      if (buffer[pos] == '*') {
+        pos++;
+        char *num_str = read_until_crlf(buffer, &pos, bytes_read);
+        if (!num_str) {
+          break;
+        }
+
+        int num_elements = atoi(num_str);
+        char *command = NULL;
+        char *echo_arg = NULL;
+
+        // Read each bulk string in the array
+        for (int i = 0; i < num_elements; i++) {
+          if (buffer[pos] != '$') {
+            break;
+          }
+          pos++; // Skip $
+
+          char *len_str = read_until_crlf(buffer, &pos, bytes_read);
+          if (!len_str) {
+            break;
+          }
+
+          char *element = read_until_crlf(buffer, &pos, bytes_read);
+          if (!element) {
+            break;
+          }
+
+          if (i == 0) {
+            command = strdup(element);
+          } else if (i == 1) {
+            echo_arg = strdup(element);
+          }
+        }
+
+        if (command) {
+          if (strcasecmp(command, "ping") == 0) {
+            send(client_fd, "+PONG\r\n", 7, 0);
+          } else if (strcasecmp(command, "echo") == 0 && echo_arg) {
+            char response[BUFFER_SIZE];
+            snprintf(response, BUFFER_SIZE, "$%d\r\n%s\r\n",
+                     (int)strlen(echo_arg), echo_arg);
+            send(client_fd, response, strlen(response), 0);
+          }
+        }
+      }
+    }
   }
 
   close(client_fd);

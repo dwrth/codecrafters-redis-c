@@ -52,17 +52,18 @@ int main() {
   printf("Waiting for a client to connect...\n");
   client_addr_len = sizeof(client_addr);
 
-  int client_fd =
-      accept(server_fd, (struct sockaddr *)&client_addr, &client_addr_len);
-  printf("Client connected\n");
+  while (1) {
+    int client_fd =
+        accept(server_fd, (struct sockaddr *)&client_addr, &client_addr_len);
+    printf("Client connected\n");
 
-  char buffer[BUFFER_SIZE];
+    char buffer[BUFFER_SIZE];
 
-  while (read(client_fd, buffer, sizeof(buffer))) {
-    send(client_fd, "+PONG\r\n", strlen("+PONG\r\n"), 0);
+    while (read(client_fd, buffer, sizeof(buffer))) {
+      send(client_fd, "+PONG\r\n", strlen("+PONG\r\n"), 0);
+    }
   }
 
-  close(client_fd);
   close(server_fd);
 
   return 0;

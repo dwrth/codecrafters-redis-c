@@ -11,6 +11,8 @@
 
 #define BUFFER_SIZE 1024
 #define RESP_OK "+OK\r\n"
+#define NULL_BULK_STRING "$-1\r\n"
+#define PONG_RESPONSE "+PONG\r\n"
 
 typedef struct key_value {
   char key[BUFFER_SIZE];
@@ -39,7 +41,7 @@ void cleanup(int signum) {
   exit(0);
 }
 
-void log_kv_store(key_value *kv_store, char *func_name) {
+void log_kv_store(char *func_name) {
   printf("Logging kv store in %s\n", func_name);
   for (int i = 0; i < 100; i++) {
     if (kv_store[i].key[0] != '\0') {
@@ -48,7 +50,7 @@ void log_kv_store(key_value *kv_store, char *func_name) {
   }
 }
 
-void add_to_kv_store(key_value *kv_store, char *key, char *value) {
+void add_to_kv_store(char *key, char *value) {
   for (int i = 0; i < 100; i++) {
     if (kv_store[i].key[0] == '\0' || strcmp(kv_store[i].key, key) == 0) {
       strncpy(kv_store[i].key, key, BUFFER_SIZE - 1);
@@ -60,14 +62,14 @@ void add_to_kv_store(key_value *kv_store, char *key, char *value) {
       break;
     }
   }
+  printf("added key: %s, value: %s\n", key, value);
 }
 
-char *get_from_kv_store(key_value *kv_store[], char *key) {
+char *get_from_kv_store(char *key) {
   for (int i = 0; i < 100; i++) {
-    if (kv_store[i] != NULL && strcmp(kv_store[i]->key, key) == 0) {
-      printf("Found key: %s, value: %s\n", kv_store[i]->key,
-             kv_store[i]->value);
-      return kv_store[i]->value;
+    if (kv_store[i].key[0] != '\0' && strcmp(kv_store[i].key, key) == 0) {
+      printf("Found key: %s, value: %s\n", kv_store[i].key, kv_store[i].value);
+      return kv_store[i].value;
     }
   }
   return NULL;
@@ -108,7 +110,6 @@ void handle_client(int client_fd) {
         int num_elements = atoi(num_str);
         char *command = NULL;
         char *args[num_elements];
-
         // Read each bulk string in the array
         for (int i = 0; i < num_elements; i++) {
           if (buffer[pos] != '$') {
@@ -133,28 +134,40 @@ void handle_client(int client_fd) {
           }
         }
 
-        if (command) {
-          if (strcasecmp(command, "ping") == 0) {
-            send(client_fd, "+PONG\r\n", 7, 0);
-          } else if (strcasecmp(command, "echo") == 0 && args[1]) {
-            char response[BUFFER_SIZE];
-            snprintf(response, BUFFER_SIZE, "$%d\r\n%s\r\n",
-                     (int)strlen(args[1]), args[1]);
-            send(client_fd, response, strlen(response), 0);
-          } else if (strcasecmp(command, "set") == 0 && args[1] && args[2]) {
-            printf("Setting key: %s to value: %s\n", args[1], args[2]);
-            add_to_kv_store(kv_store, args[1], args[2]);
-            printf("KV Store after set: \n");
-            send(client_fd, RESP_OK, strlen(RESP_OK), 0);
-          } else if (strcasecmp(command, "get") == 0 && args[1]) {
-            printf("Getting key: %s\n", args[1]);
-            char *value = get_from_kv_store(&kv_store, args[1]);
-            printf("Value: %s\n", value);
+        if (command == 0) {
+          continue;
+        }
+
+        if (strcasecmp(command, "ping") == 0) {
+          send(client_fd, PONG_RESPONSE, strlen(PONG_RESPONSE), 0);
+          continue;
+        }
+
+        if (strcasecmp(command, "echo") == 0 && args[1]) {
+          char response[BUFFER_SIZE];
+          snprintf(response, BUFFER_SIZE, "$%d\r\n%s\r\n", (int)strlen(args[1]),
+                   args[1]);
+          send(client_fd, response, strlen(response), 0);
+          continue;
+        }
+
+        if (strcasecmp(command, "set") == 0 && args[1] && args[2]) {
+          add_to_kv_store(args[1], args[2]);
+          send(client_fd, RESP_OK, strlen(RESP_OK), 0);
+          continue;
+        }
+
+        if (strcasecmp(command, "get") == 0 && args[1]) {
+          char *value = get_from_kv_store(args[1]);
+          if (value) {
             char response[BUFFER_SIZE];
             snprintf(response, BUFFER_SIZE, "$%d\r\n%s\r\n", (int)strlen(value),
                      value);
             send(client_fd, response, strlen(response), 0);
+          } else {
+            send(client_fd, NULL_BULK_STRING, strlen(NULL_BULK_STRING), 0);
           }
+          continue;
         }
       }
     }

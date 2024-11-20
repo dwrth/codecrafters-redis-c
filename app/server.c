@@ -41,15 +41,6 @@ void cleanup(int signum) {
   exit(0);
 }
 
-void log_kv_store(char *func_name) {
-  printf("Logging kv store in %s\n", func_name);
-  for (int i = 0; i < 100; i++) {
-    if (kv_store[i].key[0] != '\0') {
-      printf("Key: %s, Value: %s\n", kv_store[i].key, kv_store[i].value);
-    }
-  }
-}
-
 void add_to_kv_store(char *key, char *value) {
   for (int i = 0; i < 100; i++) {
     if (kv_store[i].key[0] == '\0' || strcmp(kv_store[i].key, key) == 0) {

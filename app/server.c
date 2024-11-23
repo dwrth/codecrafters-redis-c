@@ -7,6 +7,7 @@
 #include <string.h>
 #include <sys/shm.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 #define BUFFER_SIZE 1024
@@ -17,6 +18,9 @@
 typedef struct key_value {
   char key[BUFFER_SIZE];
   char value[BUFFER_SIZE];
+  long long timestamp;
+  int expired;
+  int expiry_in_millis;
 } key_value;
 
 static int shm_id;          // Make this global so signal handler can access it
@@ -26,22 +30,39 @@ static key_value *kv_store; // Global pointer to shared memory
 void cleanup(int signum) {
   printf("\nCleaning up shared memory...\n");
 
-  // Detach and free all key_value structures
-
-  // Detach from shared memory
-  if (shmdt(kv_store) == -1) {
-    printf("shmdt failed: %s\n", strerror(errno));
+  if (kv_store != NULL) {
+    if (shmdt(kv_store) == -1) {
+      printf("shmdt failed: %s\n", strerror(errno));
+    }
   }
 
-  // Remove shared memory segment
-  if (shmctl(shm_id, IPC_RMID, NULL) == -1) {
-    printf("shmctl failed: %s\n", strerror(errno));
+  if (shm_id > 0) {
+    if (shmctl(shm_id, IPC_RMID, NULL) == -1) {
+      printf("shmctl failed: %s\n", strerror(errno));
+    }
   }
 
   exit(0);
 }
 
-void add_to_kv_store(char *key, char *value) {
+long long current_time_millis() {
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  return (tv.tv_sec * 1000LL) + (tv.tv_usec / 1000);
+}
+
+void log_kv_store() {
+  for (int i = 0; i < 100; i++) {
+    if (kv_store[i].key[0] == '\0') {
+      continue;
+    }
+    printf("key: %s, value: %s, timestamp: %lld, expiry_in_millis: %d\n",
+           kv_store[i].key, kv_store[i].value, kv_store[i].timestamp,
+           kv_store[i].expiry_in_millis);
+  }
+}
+
+void add_to_kv_store(char *key, char *value, int expiry_in_millis) {
   for (int i = 0; i < 100; i++) {
     if (kv_store[i].key[0] == '\0' || strcmp(kv_store[i].key, key) == 0) {
       strncpy(kv_store[i].key, key, BUFFER_SIZE - 1);
@@ -49,7 +70,9 @@ void add_to_kv_store(char *key, char *value) {
 
       strncpy(kv_store[i].value, value, BUFFER_SIZE - 1);
       kv_store[i].value[BUFFER_SIZE - 1] = '\0';
-
+      kv_store[i].timestamp = current_time_millis();
+      kv_store[i].expiry_in_millis = expiry_in_millis;
+      log_kv_store();
       break;
     }
   }
@@ -60,13 +83,18 @@ char *get_from_kv_store(char *key) {
   for (int i = 0; i < 100; i++) {
     if (kv_store[i].key[0] != '\0' && strcmp(kv_store[i].key, key) == 0) {
       printf("Found key: %s, value: %s\n", kv_store[i].key, kv_store[i].value);
+      if (kv_store[i].expired == 0 && kv_store[i].expiry_in_millis > 0 &&
+          current_time_millis() - kv_store[i].timestamp >
+              kv_store[i].expiry_in_millis) {
+        kv_store[i].expired = 1;
+        return NULL;
+      }
       return kv_store[i].value;
     }
   }
   return NULL;
 }
 
-// Add helper functions for RESP parsing
 char *read_until_crlf(char *buffer, int *pos, int len) {
   static char result[BUFFER_SIZE];
   int i = 0;
@@ -101,7 +129,6 @@ void handle_client(int client_fd) {
         int num_elements = atoi(num_str);
         char *command = NULL;
         char *args[num_elements];
-        // Read each bulk string in the array
         for (int i = 0; i < num_elements; i++) {
           if (buffer[pos] != '$') {
             break;
@@ -143,7 +170,11 @@ void handle_client(int client_fd) {
         }
 
         if (strcasecmp(command, "set") == 0 && args[1] && args[2]) {
-          add_to_kv_store(args[1], args[2]);
+          int expiry_in_millis = 0;
+          if (strcasecmp(args[3], "px") == 0) {
+            expiry_in_millis = atoi(args[4]);
+          };
+          add_to_kv_store(args[1], args[2], expiry_in_millis);
           send(client_fd, RESP_OK, strlen(RESP_OK), 0);
           continue;
         }
